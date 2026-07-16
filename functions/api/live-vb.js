@@ -153,15 +153,27 @@ export async function onRequest(context) {
   }
 
   const items = priorityItems.concat(priorityLater);
+
+  // 过滤已过期预告：开播时间早于当前(空值保留,前端不显示时间)
+  const nowMs = Date.now();
+  const filtered = items.filter((it) => {
+    if (it._state !== "upcoming") return true;
+    if (!it._scheduledStart) return true;
+    const t = Date.parse(it._scheduledStart);
+    if (isNaN(t)) return true;
+    return t >= nowMs - 60 * 60 * 1000; // 留 1 小时缓冲,刚结束的也先保留
+  });
+  const liveN = filtered.filter((it) => it._state === "live").length;
+  const upN = filtered.filter((it) => it._state === "upcoming").length;
   return jsonResponse({
     kind: "youtube#searchListResponse",
     pageInfo: {
-      totalResults: items.length,
-      resultsPerPage: items.length,
-      liveCount: priorityItems.length,
-      upcomingCount: priorityLater.length,
-      priorityCount: priorityItems.length + priorityLater.length,
+      totalResults: filtered.length,
+      resultsPerPage: filtered.length,
+      liveCount: liveN,
+      upcomingCount: upN,
+      priorityCount: filtered.length,
     },
-    items,
+    items: filtered,
   });
 }
