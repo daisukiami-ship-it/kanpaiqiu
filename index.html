@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M3U8 / HLS 在线播放器（云端版）</title>
+<link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#121826; --panel-2:#0f1521; --border:#243044;
+    --brand:#3b82f6; --brand-2:#2563eb; --text:#e6edf6; --muted:#93a1b5;
+    --danger:#ef4444; --ok:#22c55e;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
+  a{color:var(--brand);}
+  header.top{position:sticky;top:0;z-index:20;background:rgba(11,15,23,.82);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);}
+  header.top .inner{max-width:1400px;margin:0 auto;padding:14px 20px;
+    display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;}
+  header.top .dot{width:10px;height:10px;border-radius:50%;background:var(--brand);}
+  .container{max-width:1400px;margin:0 auto;padding:20px;}
+  /* 两栏布局：左 4/5 视频+控制区，右 1/5 实时排球直播列表 */
+  .layout{display:flex;gap:18px;align-items:flex-start;}
+  .col-left{flex:4 1 0;min-width:0;}
+  .col-right{flex:1 1 0;min-width:0;}
+  @media (max-width:900px){ .layout{flex-direction:column;} .col-right{width:100%;} }
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;}
+  .card h2{margin:0 0 12px;font-size:16px;}
+
+  .url-row{display:flex;gap:10px;}
+  .url-row input{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--border);
+    color:var(--text);border-radius:10px;padding:12px 14px;font-size:15px;outline:none;}
+  .url-row input:focus{border-color:var(--brand);}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;
+    padding:12px 22px;font-weight:700;font-size:15px;cursor:pointer;transition:.15s;white-space:nowrap;}
+  .btn:hover{background:var(--brand-2);}
+  .btn:disabled{opacity:.6;cursor:not-allowed;}
+
+  .adv-toggle{background:none;border:none;color:var(--brand);cursor:pointer;
+    font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;padding:0;margin:0 0 10px;}
+  .adv-toggle svg{transition:transform .2s;}
+  .adv-toggle.open svg{transform:rotate(180deg);}
+  .adv-box{display:none;gap:10px;margin-top:4px;}
+  .adv-box.show{display:flex;flex-wrap:wrap;}
+  .adv-box label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);flex:1 1 240px;min-width:0;}
+  .adv-box input{background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    border-radius:10px;padding:10px 12px;font-size:14px;outline:none;}
+  .adv-box input:focus{border-color:var(--brand);}
+
+  .stage{position:relative;background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--border);}
+  .stage .video-js{width:100%;height:100%;}
+  #hlsWrap,#ytWrap{display:none;width:100%;aspect-ratio:16/9;}
+  #ytWrap iframe{width:100%;height:100%;border:0;display:block;}
+  #ytplayer{width:100%;height:100%;}
+  .error-bar{display:none;position:absolute;inset:0;z-index:10;
+    background:rgba(15,21,33,.96);align-items:center;justify-content:center;text-align:center;padding:24px;}
+  .error-bar.show{display:flex;}
+  .error-bar .box{max-width:520px;}
+  .error-bar p{margin:0 0 6px;color:var(--danger);font-weight:700;}
+  .error-bar small{color:var(--muted);word-break:break-word;white-space:pre-wrap;}
+  .error-bar a.yt-link{display:inline-block;margin-top:12px;background:var(--brand);color:#fff;
+    text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:10px;}
+  .error-bar a.yt-link:hover{background:var(--brand-2);}
+  .status{margin-top:10px;font-size:13px;color:var(--muted);min-height:18px;}
+  .status.ok{color:var(--ok);} .status.err{color:var(--danger);}
+
+  /* 右侧：实时排球直播列表面板 */
+  .live-panel{position:sticky;top:84px;background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:14px;display:flex;flex-direction:column;max-height:calc(100vh - 110px);}
+  /* 右栏双 tab + 电视台直播源（新增，与现有样式无冲突） */
+  .rtabs{display:flex;gap:6px;margin-bottom:12px;background:var(--panel-2);
+    border:1px solid var(--border);border-radius:10px;padding:4px;}
+  .rtab{flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--muted);
+    background:none;border:none;border-radius:8px;padding:8px 6px;cursor:pointer;transition:.15s;white-space:nowrap;}
+  .rtab:hover{color:var(--text);}
+  .rtab.active{background:var(--brand);color:#fff;}
+  .rpane{display:none;}
+  .rpane.active{display:flex;flex-direction:column;min-height:0;}
+  .tv-grid{display:flex;flex-direction:column;gap:12px;}
+  .tv-card{display:flex;flex-direction:column;align-items:center;gap:8px;
+    border:1px solid var(--border);border-radius:12px;padding:16px 10px;cursor:pointer;
+    background:var(--panel-2);transition:.15s;text-align:center;text-decoration:none;color:inherit;}
+  .tv-card:hover{border-color:var(--brand);background:#16203a;transform:translateY(-2px);}
+  .tv-card .tv-logobox{width:100%;height:120px;display:flex;align-items:center;justify-content:center;
+    border-radius:8px;padding:0;overflow:hidden;}
+  .tv-card .tv-logobox img{width:100%;height:100%;object-fit:contain;}
+  .tv-card .tv-geo{font-size:18px;color:#fff;font-weight:600;}
+  .live-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;}
+  .live-head .tag{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--brand);border:1px solid var(--border);border-radius:999px;padding:3px 10px;}
+  .refresh-btn{background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px;line-height:1;transition:.15s;}
+  .refresh-btn:hover{border-color:var(--brand);color:var(--brand);}
+  .refresh-btn.spin{animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .live-list{overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;}
+  .live-empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 6px;}
+  .live-card{position:relative;display:flex;gap:10px;border:1px solid var(--border);border-radius:10px;
+    padding:8px;cursor:pointer;background:var(--panel-2);transition:.15s;text-decoration:none;}
+  .live-card:hover{border-color:var(--brand);background:#16203a;}
+  .live-card.active{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand);}
+  .live-card .thumb{width:96px;height:54px;object-fit:cover;border-radius:6px;flex:0 0 auto;background:#000;}
+  .live-card .badge{position:absolute;top:6px;left:6px;background:var(--danger);color:#fff;
+    font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;letter-spacing:.04em;}
+  .badge-upcoming{background:#6b7280;}
+  .live-card.upcoming{opacity:.86;}
+  .live-card .ctime{font-size:11px;color:var(--muted,#9aa4b2);margin-top:2px;}
+  .live-card .meta{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px;}
+  .live-card .ctitle{font-size:13px;line-height:1.3;color:var(--text);display:-webkit-box;
+    -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .live-card .cch{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .live-list::-webkit-scrollbar{width:8px;}
+  .live-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+  footer{max-width:1400px;margin:0 auto;padding:24px 20px 40px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);}
+</style>
+</head>
+<body>
+<header class="top"><div class="inner"><span class="dot"></span> M3U8 / HLS 在线播放器</div></header>
+
+<div class="container">
+  <div class="layout">
+    <!-- 左栏：视频框 + 地址栏 + 全部控制 -->
+    <div class="col-left">
+      <div class="card">
+        <h2>测试你的流 / 视频</h2>
+        <div class="url-row">
+          <input id="url" type="url" placeholder="输入 M3U8 或 YouTube 地址" aria-label="M3U8 或 YouTube 地址" />
+          <button id="play" class="btn">播放</button>
+        </div>
+        <div style="margin-top:10px;">
+          <button id="advToggle" class="adv-toggle" aria-expanded="false" aria-controls="advBox">
+            <span>显示高级选项</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
+        <div id="advBox" class="adv-box">
+          <label>HTTP Referrer（可选）<input id="referrer" type="text" placeholder="https://example.com" /></label>
+          <label>User Agent（可选）<input id="ua" type="text" placeholder="自定义 UA 字符串" /></label>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div id="hlsWrap"><video id="video" class="video-js vjs-big-play-centered" controls preload="auto" playsinline></video></div>
+        <div id="ytWrap"></div>
+        <div id="errBar" class="error-bar">
+          <div class="box">
+            <p id="errTitle">播放出错</p>
+            <small id="errMsg"></small>
+            <a id="ytWatch" class="yt-link" href="#" target="_blank" rel="noopener" style="display:none;">在 YouTube 上观看此视频</a>
+          </div>
+        </div>
+      </div>
+      <div id="status" class="status"></div>
+
+      <div class="card">
+        <h2>使用说明</h2>
+        <ol style="margin:0;padding-left:20px;color:var(--muted);line-height:1.7;">
+          <li>复制你的 M3U8 流地址（通常以 .m3u8 结尾）或 YouTube 链接。</li>
+          <li>将地址粘贴到上方输入框。</li>
+          <li>点击 <b>播放</b> 按钮，HLS 播放器会在浏览器中直接加载并播放。</li>
+          <li>若流需要特定来源校验，可在高级选项中填写 HTTP Referrer 或自定义 User Agent。</li>
+        </ol>
+        <p style="color:var(--muted);font-size:13px;margin:12px 0 0;">
+          支持：M3U8/HLS 流、MP4 直链、YouTube 视频。右侧为 YouTube 上正在进行的排球直播，点击即可在此处播放。浏览器需开启 CORS 且服务端允许跨域。
+        </p>
+      </div>
+    </div>
+
+    <!-- 右栏：1/5 预留空间 → 实时排球直播列表 -->
+    <aside class="col-right">
+      <div class="live-panel">
+        <div class="rtabs">
+          <button class="rtab active" data-pane="paneYt">YouTube 排球直播</button>
+          <button class="rtab" data-pane="paneTv">电视台直播源</button>
+        </div>
+
+        <!-- Tab 1：YouTube 排球直播 -->
+        <div id="paneYt" class="rpane active">
+          <div class="live-head">
+            <span class="tag">排球直播 · 进行中</span>
+            <button id="refreshLive" class="refresh-btn" title="刷新列表">&#8635;</button>
+          </div>
+          <div id="liveList" class="live-list"><div class="live-empty">加载中…</div></div>
+        </div>
+
+        <!-- Tab 2：电视台直播源 -->
+        <div id="paneTv" class="rpane">
+          <div class="live-head">
+            <span class="tag">电视台 · 官方直播</span>
+          </div>
+          <div id="tvGrid" class="tv-grid"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<footer>基于 globalfreetv M3U8 Player 思路复刻 · 使用 Video.js + HLS（VHS）实现 · 右侧排球直播来自 YouTube Data API · 纯前端。</footer>
+
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+<script>
+(function(){
+  // —— 与 globalfreetv 一致：YouTube 地址识别 + ID 提取 ——
+  var YT_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/)|youtu\.be\/|m\.youtube\.com\/watch\?v=)/;
+  function extractYouTubeId(url){
+    var patterns = [
+      /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtube\.com\/v\/|youtu\.be\/|m\.youtube\.com\/watch\?v=)([^&\n?#]+)/
+    ];
+    for (var i=0;i<patterns.length;i++){
+      var m = url.match(patterns[i]);
+      if (m && m[1]) return m[1];
+    }
+    return null;
+  }
+
+  var urlInput = document.getElementById('url');
+  var referrerInput = document.getElementById('referrer');
+  var uaInput = document.getElementById('ua');
+  var playBtn = document.getElementById('play');
+  var advToggle = document.getElementById('advToggle');
+  var advBox = document.getElementById('advBox');
+  var hlsWrap = document.getElementById('hlsWrap');
+  var ytWrap = document.getElementById('ytWrap');
+  var errBar = document.getElementById('errBar');
+  var errTitle = document.getElementById('errTitle');
+  var errMsg = document.getElementById('errMsg');
+  var ytWatch = document.getElementById('ytWatch');
+  var statusEl = document.getElementById('status');
+
+  var player = null;
+  var ytWatchUrl = null;
+
+  function setStatus(text, cls){ statusEl.textContent = text || ''; statusEl.className = 'status' + (cls?(' '+cls):''); }
+  function showError(title, msg){
+    errTitle.textContent = title || '播放出错';
+    errMsg.textContent = msg || '';
+    ytWatch.style.display = 'none';
+    ytWatch.removeAttribute('href');
+    errBar.classList.add('show');
+  }
+  function showErrorYt(title, msg, watchUrl){
+    showError(title, msg);
+    if (watchUrl){ ytWatch.href = watchUrl; ytWatch.style.display = 'inline-block'; }
+    else if (ytWatchUrl){ ytWatch.href = ytWatchUrl; ytWatch.style.display = 'inline-block'; }
+  }
+  function hideError(){ errBar.classList.remove('show'); }
+
+  // 高级选项展开/收起
+  advToggle.addEventListener('click', function(){
+    var open = advBox.classList.toggle('show');
+    advToggle.classList.toggle('open', open);
+    advToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    advToggle.querySelector('span').textContent = open ? '隐藏高级选项' : '显示高级选项';
+  });
+
+  function disposePlayer(){
+    if (player){ try { player.dispose(); } catch(e){} player = null; }
+  }
+
+  // —— HLS 播放（Video.js + VHS，注入 Referer/UA 与原始代码一致）——
+  function playHls(src, referrer, ua){
+    hideError();
+    ytWrap.style.display = 'none';
+    hlsWrap.style.display = 'block';
+    disposePlayer();
+    hlsWrap.innerHTML = '<video id="video" class="video-js vjs-big-play-centered" controls preload="auto" playsinline></video>';
+    var v = document.getElementById('video');
+
+    player = videojs(v, {
+      controls: true,
+      autoplay: true,
+      fluid: true,
+      sources: [{ src: src, type: 'application/x-mpegURL' }]
+    });
+
+    player.ready(function(){
+      var tech = player.tech({ IWillNotUseThisInPlugins: true });
+      if (tech && tech.hls && tech.hls.xhr){
+        tech.hls.xhr.beforeRequest = function(req){
+          req.headers = req.headers || {};
+          if (referrer) req.headers.Referer = referrer;
+          if (ua) req.headers['User-Agent'] = ua;
+          return req;
+        };
+      }
+      setStatus('正在加载 HLS 流…', '');
+    });
+
+    player.on('playing', function(){ hideError(); setStatus('正在播放', 'ok'); });
+    player.on('error', function(){
+      var err = player.error();
+      var msg = '未知错误';
+      if (err){
+        if (typeof err === 'string') msg = err;
+        else if (err.message) msg = err.message;
+        else if (err.code) msg = '错误码 ' + err.code;
+      }
+      setStatus('加载失败：' + msg, 'err');
+      showError('无法加载该流', '请检查地址是否正确、服务端是否开启 CORS，或尝试在高级选项中设置 HTTP Referrer / User Agent。\n\n' + msg);
+    });
+  }
+
+  // —— YouTube 嵌入（使用 IFrame Player API，可捕获错误 153 等嵌入限制）—— //
+  function playYouTube(id){
+    hideError();
+    disposePlayer();
+    hlsWrap.style.display = 'none';
+    ytWrap.style.display = 'block';
+    var watchUrl = 'https://www.youtube.com/watch?v=' + id;
+    // embed code identical to globalfreetv; works on a real http(s) origin.
+    // Error 153 only appears when opened via file:// (null origin) -> serve over http(s).
+    ytWatchUrl = watchUrl;
+    ytWrap.innerHTML = '<iframe src="https://www.youtube.com/embed/' + encodeURIComponent(id) +
+      '?autoplay=1" referrerpolicy="strict-origin-when-cross-origin" title="YouTube video player" frameborder="0" ' +
+      'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
+    setStatus('Playing YouTube video', 'ok');
+  }
+
+  function play(){
+    var raw = (urlInput.value || '').trim();
+    if (!raw){ alert('请输入有效的 M3U8 或 YouTube 地址'); return; }
+    var src = raw.replace(/^http:\/\//i, 'https://'); // 归一化 http -> https
+    var referrer = (referrerInput.value || '').trim();
+    var ua = (uaInput.value || '').trim();
+
+    if (YT_REGEX.test(src)){
+      var id = extractYouTubeId(src);
+      if (id){ playYouTube(id); }
+      else { showError('无法解析 YouTube 地址', src); }
+    } else {
+      playHls(src, referrer, ua);
+    }
+  }
+
+  playBtn.addEventListener('click', play);
+  urlInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') play(); });
+
+  // —— 右侧：实时排球直播列表（YouTube Data API）—— //
+  // 云端版：不在前端持有 Key，改调服务端代理 api/live-vb
+  var LIVE_API = 'api/live-vb';
+  var YT_QUERY = 'volleyball live';
+  var liveList = document.getElementById('liveList');
+  var refreshBtn = document.getElementById('refreshLive');
+  var lastFetch = 0, lastVideoId = null;
+
+  // YouTube API 返回的标题已是 HTML 实体编码（如 Men&#39;s、&amp;），
+// 先解码一次再重新转义，避免双重转义导致页面显示字面实体。
+  var _decoder = document.createElement('textarea');
+  function decodeEntities(s){ if(!s) return ''; _decoder.innerHTML = s; return _decoder.value; }
+  function escapeHtml(s){ return decodeEntities(s||'').replace(/[&<>\"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function renderLive(items){
+    if (!items || !items.length){
+      liveList.innerHTML = '<div class="live-empty">当前没有进行中的排球直播</div>';
+      return;
+    }
+    liveList.innerHTML = '';
+    items.forEach(function(it){
+      var id = it.id && it.id.videoId;
+      if (!id) return;
+      var sn = it.snippet || {};
+      var thumb = (sn.thumbnails && (sn.thumbnails.medium || sn.thumbnails['default']))
+        ? (sn.thumbnails.medium || sn.thumbnails['default']).url : '';
+      var state = it._state || sn.liveBroadcastContent || 'live';
+      var isUpcoming = (state === 'upcoming');
+      var badgeHtml = isUpcoming
+        ? '<span class="badge badge-upcoming">预告</span>'
+        : '<span class="badge">LIVE</span>';
+      var timeHtml = '';
+      if (isUpcoming && it._scheduledStart){
+        var d = new Date(it._scheduledStart);
+        if (!isNaN(d.getTime())){
+          var mm = ('0'+(d.getMonth()+1)).slice(-2), dd = ('0'+d.getDate()).slice(-2);
+          var hh = ('0'+d.getHours()).slice(-2), mi = ('0'+d.getMinutes()).slice(-2);
+          timeHtml = '<div class="ctime">开播 · '+mm+'/'+dd+' '+hh+':'+mi+'</div>';
+        }
+      }
+      var card = document.createElement('div');
+      card.className = 'live-card' + (id === lastVideoId ? ' active' : '') + (isUpcoming ? ' upcoming' : '');
+      card.setAttribute('data-id', id);
+      card.innerHTML =
+        '<img class="thumb" src="'+thumb+'" alt="" loading="lazy" />' +
+        badgeHtml +
+        '<div class="meta"><div class="ctitle">'+escapeHtml(sn.title||'')+'</div>' +
+        '<div class="cch">'+escapeHtml(sn.channelTitle||'')+'</div>' + timeHtml + '</div>';
+      card.addEventListener('click', function(){
+        lastVideoId = id;
+        document.querySelectorAll('.live-card').forEach(function(c){ c.classList.remove('active'); });
+        card.classList.add('active');
+        urlInput.value = 'https://www.youtube.com/watch?v=' + id;
+        play();
+      });
+      liveList.appendChild(card);
+    });
+  }
+
+  function fetchLive(){
+    var now = Date.now();
+    if (now - lastFetch < 90000 && liveList.dataset.loaded) return; // 90s 客户端缓存，省配额
+    refreshBtn.classList.add('spin');
+    var url = LIVE_API + '?q=' + encodeURIComponent(YT_QUERY);
+    fetch(url).then(function(r){ return r.json(); }).then(function(j){
+      lastFetch = Date.now();
+      liveList.dataset.loaded = '1';
+      if (j.error){ liveList.innerHTML = '<div class="live-empty">获取失败：'+escapeHtml(j.error.message||'')+'</div>'; return; }
+      renderLive(j.items || []);
+    }).catch(function(e){
+      liveList.innerHTML = '<div class="live-empty">网络错误：'+escapeHtml(String(e))+'</div>';
+    }).finally(function(){ setTimeout(function(){ refreshBtn.classList.remove('spin'); }, 600); });
+  }
+
+  refreshBtn.addEventListener('click', function(){ lastFetch = 0; fetchLive(); });
+  fetchLive();
+
+  /* ===== 电视台直播源（新增）===== */
+  // TRT 为土耳其国家体育台官方免费直播，受跨域(CORS)+地域双重限制无法网页内嵌。
+  // 改为超链接：点击新标签页打开官方直播页（需土耳其 IP）。
+  var TV_CHANNELS = [
+    { name:'TRT Spor', geo:'限定土耳其 IP',
+      logo:'assets/trt-spor.webp',
+      link:'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor' },
+    { name:'TRT Spor Yıldız', geo:'限定土耳其 IP',
+      logo:'assets/trt-spor-yildiz.webp',
+      link:'https://www.trtspor.com.tr/canli-yayin-izle/trt-spor-yildiz' }
+  ];
+  var tvGrid = document.getElementById('tvGrid');
+  function renderTv(){
+    if(!tvGrid) return;
+    tvGrid.innerHTML = '';
+    TV_CHANNELS.forEach(function(ch){
+      var card = document.createElement('a');
+      card.className = 'tv-card';
+      card.href = ch.link;
+      card.target = '_blank';
+      card.rel = 'noopener';
+      card.innerHTML =
+        '<div class="tv-logobox"><img src="'+ch.logo+'" alt="'+escapeHtml(ch.name)+'" loading="lazy" /></div>' +
+        '<div class="tv-geo">('+escapeHtml(ch.geo)+')</div>';
+      tvGrid.appendChild(card);
+    });
+  }
+  renderTv();
+  // tab 切换
+  var rtabs = document.querySelectorAll('.rtab');
+  rtabs.forEach(function(tab){
+    tab.addEventListener('click', function(){
+      rtabs.forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+      document.querySelectorAll('.rpane').forEach(function(p){ p.classList.remove('active'); });
+      var pane = document.getElementById(tab.getAttribute('data-pane'));
+      if (pane) pane.classList.add('active');
+    });
+  });
+  // 自动刷新已关闭，需要时点击右上角刷新按钮手动更新。
+})();
+</script>
+</body>
+</html>
