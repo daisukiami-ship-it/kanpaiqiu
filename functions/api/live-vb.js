@@ -16,7 +16,6 @@
 const CHANNEL_WHITELIST_DEFAULT = [
   "UCjauoNHBQP5Pa_xH1cv-JRQ", // Asian Volleyball Confederation
   "UC8XRC858pOERvclUDb_d7rg", // European Volleyball
-  "UCQpeujIamj2ZOKXZnrxTRhA", // Galatasaray
   "UCm-KUxgF1uOrwBb3_IRZR2A", // LOVB
   "UCitq3mixAs4qZX-4RX1OEtA", // Trực Tiếp Bóng Chuyền
   "UCTgQ8Bfq3AUuo1vWULdvRKw", // TVF VOLEYBOL TV
