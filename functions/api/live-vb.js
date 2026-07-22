@@ -21,6 +21,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCTgQ8Bfq3AUuo1vWULdvRKw", // TVF VOLEYBOL TV
   "UCNMg6XDhRZI2QzL4pWOvP_w", // Volleyball World
   "UCaTF1soVKjGtdhizgLJVydg", // Volleyball World Italia
+  "UCw56njNrrXwcODpbacS3Tmw", // European Universities Games 2026 (@eug2026)
 ];
 
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
