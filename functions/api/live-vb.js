@@ -17,6 +17,7 @@
 // 专门排球频道不在此列表，全部收录（不受关键词限制）。
 const MIXED_SPORT_CHANNELS = {
   "UCw56njNrrXwcODpbacS3Tmw": "European Universities Games 2026", // @eug2026
+  "UC5P87cB2LXUMmmn3W4v9o_w": "Latina Deportes", // @LatinaDeportes 秘鲁综合体育台
 };
 
 const CHANNEL_WHITELIST_DEFAULT = [
@@ -28,6 +29,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCNMg6XDhRZI2QzL4pWOvP_w", // Volleyball World
   "UCaTF1soVKjGtdhizgLJVydg", // Volleyball World Italia
   "UCw56njNrrXwcODpbacS3Tmw", // European Universities Games 2026 (@eug2026)
+  "UC5P87cB2LXUMmmn3W4v9o_w", // Latina Deportes (@LatinaDeportes, 秘鲁综合体育台)
 ];
 
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
