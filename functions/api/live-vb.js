@@ -13,6 +13,12 @@
  * 加频道：改下面 CHANNEL_WHITELIST 常量即可（也可改读 env.CHANNEL_WHITELIST 逗号分隔）
  */
 
+// 综合性/多项目频道：同一频道混播多种运动，需按排球关键词过滤，只留排球。
+// 专门排球频道不在此列表，全部收录（不受关键词限制）。
+const MIXED_SPORT_CHANNELS = {
+  "UCw56njNrrXwcODpbacS3Tmw": "European Universities Games 2026", // @eug2026
+};
+
 const CHANNEL_WHITELIST_DEFAULT = [
   "UCjauoNHBQP5Pa_xH1cv-JRQ", // Asian Volleyball Confederation
   "UC8XRC858pOERvclUDb_d7rg", // European Volleyball
@@ -125,6 +131,13 @@ export async function onRequest(context) {
       if (lbc !== "live" && lbc !== "upcoming") continue;
       const vid = v.id;
       if (seen[vid]) continue;
+      // 综合性频道（多项目大赛）只保留排球场次；专门排球频道全收
+      // （其比赛标题常不含 volleyball 字样，如 "vs. - Round of 16..."）。
+      // 关键词用 volley：可区分 Volleyball/Beach Volley 与 Handball/Futsal/Padel/Table Tennis。
+      if (MIXED_SPORT_CHANNELS[sn.channelId]) {
+        const title = (sn.title || "").toLowerCase();
+        if (!title.includes("volley")) continue;
+      }
       seen[vid] = true;
       const lsd = v.liveStreamingDetails || {};
       const scheduledStart = lsd.scheduledStartTime || "";
