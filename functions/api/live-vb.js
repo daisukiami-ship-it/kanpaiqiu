@@ -87,9 +87,12 @@ export async function onRequest(context) {
   // 1) 并发拉各频道上传播放列表，收集近期 videoId
   const plUrls = whitelist.map((cid) => {
     const plId = "UU" + cid.slice(2);
+    // 综合性频道（多项目大赛）一天上传几十条，排球易被其它项目挤出最新 15 条窗口，
+    // 故对其拉取上限 50 条（playlistItems 单页上限）；专门排球频道 15 条足够。
+    const maxResults = MIXED_SPORT_CHANNELS[cid] ? "50" : "15";
     const qs = new URLSearchParams({
       part: "contentDetails",
-      maxResults: "15",
+      maxResults,
       playlistId: plId,
       key,
     });
