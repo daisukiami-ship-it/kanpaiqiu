@@ -30,6 +30,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCaTF1soVKjGtdhizgLJVydg", // Volleyball World Italia
   "UCw56njNrrXwcODpbacS3Tmw", // European Universities Games 2026 (@eug2026)
   "UC5P87cB2LXUMmmn3W4v9o_w", // Latina Deportes (@LatinaDeportes, 秘鲁综合体育台)
+  "UCKusmuVI9eJahQ-SQhapU6g", // Federata e Volejbollit e Kosovës (@federataevolejbollitekosov8866, 科索沃排球联合会)
 ];
 
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
