@@ -18,6 +18,7 @@
 const MIXED_SPORT_CHANNELS = {
   "UCw56njNrrXwcODpbacS3Tmw": "European Universities Games 2026", // @eug2026
   // 注：Latina Deportes (@LatinaDeportes) 已移出本名单 —— 用户要求显示其全部直播（含足球 Copa Sudamericana），不再限排球。
+  "UCdkrHEDb1xT3gts9lct12Ug": "KBS N SPORTS", // @KBSNSPORTS_official 韩国综合体育台，仅留排球(含韩文 배구)
 };
 
 const CHANNEL_WHITELIST_DEFAULT = [
@@ -138,12 +139,13 @@ export async function onRequest(context) {
       if (lbc !== "live" && lbc !== "upcoming") continue;
       const vid = v.id;
       if (seen[vid]) continue;
-      // 综合性频道（多项目大赛）只保留排球场次；专门排球频道全收
-      // （其比赛标题常不含 volleyball 字样，如 "vs. - Round of 16..."）。
-      // 关键词用 volley：可区分 Volleyball/Beach Volley 与 Handball/Futsal/Padel/Table Tennis。
+      // 综合性频道（多项目大赛/综合体育台）只保留排球场次；专门排球频道全收
+      // 英文用 volley：区分 Volleyball/Beach Volley 与 Handball/Futsal/Padel/Table Tennis。
+      // 韩文用 배구：KBS N SPORTS 等韩文标题里排球关键词为 배구（非 volley）。
       if (MIXED_SPORT_CHANNELS[sn.channelId]) {
-        const title = (sn.title || "").toLowerCase();
-        if (!title.includes("volley")) continue;
+        const title = (sn.title || "");
+        const t = title.toLowerCase();
+        if (!t.includes("volley") && !title.includes("배구")) continue;
       }
       seen[vid] = true;
       const lsd = v.liveStreamingDetails || {};
