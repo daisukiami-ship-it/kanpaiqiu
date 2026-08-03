@@ -17,7 +17,7 @@
 // 专门排球频道不在此列表，全部收录（不受关键词限制）。
 const MIXED_SPORT_CHANNELS = {
   "UCw56njNrrXwcODpbacS3Tmw": "European Universities Games 2026", // @eug2026
-  // 注：Latina Deportes (@LatinaDeportes) 已移出本名单 —— 用户要求显示其全部直播（含足球 Copa Sudamericana），不再限排球。
+  // 注：Latina Deportes (@LatinaDeportes) 已从白名单整体移除，不再抓取。
   "UCdkrHEDb1xT3gts9lct12Ug": "KBS N SPORTS", // @KBSNSPORTS_official 韩国综合体育台，仅留排球(含韩文 배구)
 };
 
@@ -30,7 +30,6 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCNMg6XDhRZI2QzL4pWOvP_w", // Volleyball World
   "UCaTF1soVKjGtdhizgLJVydg", // Volleyball World Italia
   "UCw56njNrrXwcODpbacS3Tmw", // European Universities Games 2026 (@eug2026)
-  "UC5P87cB2LXUMmmn3W4v9o_w", // Latina Deportes (@LatinaDeportes, 秘鲁综合体育台)
   "UCKusmuVI9eJahQ-SQhapU6g", // Federata e Volejbollit e Kosovës (@federataevolejbollitekosov8866, 科索沃排球联合会)
   "UCdkrHEDb1xT3gts9lct12Ug", // KBS N SPORTS (@KBSNSPORTS_official, 韩国综合体育台)
 ];
