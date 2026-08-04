@@ -34,6 +34,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCdkrHEDb1xT3gts9lct12Ug", // KBS N SPORTS (@KBSNSPORTS_official, 韩国综合体育台)
   "UCiWIC7oM6VY_5JB1xvXNUzA", // Federazione Italiana Pallavolo - FIPAV (@Federvolley., 意大利排球联合会)
   "UChQi8LJ0aaACdXuZLpCeqKw", // TopVolley Belgium (@topvolleybelgium_, 比利时排球联赛)
+  "UCXqb0HRIQMQiObmdgYvdZJg", // CAVB Live Streaming (@cavb.africa, 非洲排球联合会)
 ];
 
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
