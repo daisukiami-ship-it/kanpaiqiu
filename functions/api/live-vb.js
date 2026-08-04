@@ -92,9 +92,10 @@ export async function onRequest(context) {
   // 1) 并发拉各频道上传播放列表，收集近期 videoId
   const plUrls = whitelist.map((cid) => {
     const plId = "UU" + cid.slice(2);
-    // 综合性频道（多项目大赛）一天上传几十条，排球易被其它项目挤出最新 15 条窗口，
-    // 故对其拉取上限 50 条（playlistItems 单页上限）；专门排球频道 15 条足够。
-    const maxResults = MIXED_SPORT_CHANNELS[cid] ? "50" : "15";
+    // playlistItems 单页上限 50 条，对所有频道统一拉满 50。
+    // 联合会类频道(如 FIPAV)平时狂传集锦，预告会被挤到最新 15 条窗口之外；
+    // 拉满 50 条即可把 upcoming 预告也纳入(与拉 15 条配额相同，均为 1 次 quota)。
+    const maxResults = "50";
     const qs = new URLSearchParams({
       part: "contentDetails",
       maxResults,
