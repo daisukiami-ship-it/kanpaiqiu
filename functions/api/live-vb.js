@@ -89,23 +89,19 @@ export async function onRequest(context) {
   const priorityItems = []; // 正在直播
   const priorityLater = []; // 即将开播预告
 
-  // 1) 并发拉各频道上传播放列表（每频道 2 页 = 最多 100 条），收集 videoId
+  // 1) 并发拉各频道上传播放列表（每频道单页，截断到前 25 条），收集 videoId
   async function fetchChannelUploads(cid) {
     const plId = "UU" + cid.slice(2);
     const vids = {};
-    let pageToken = "";
-    for (let p = 0; p < 2; p++) { // 2 页 × 50 = 最多 100 条
-      const qs = new URLSearchParams({ part: "contentDetails", maxResults: "50", playlistId: plId, key });
-      if (pageToken) qs.set("pageToken", pageToken);
-      const { code, data } = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + qs.toString(), 10000);
-      if (code >= 400 || !data || !Array.isArray(data.items)) break;
-      for (const it of data.items) {
-        const vid = it && it.contentDetails && it.contentDetails.videoId
-          ? String(it.contentDetails.videoId).trim() : "";
-        if (vid) vids[vid] = true;
-      }
-      if (!data.nextPageToken) break;
-      pageToken = data.nextPageToken;
+    const qs = new URLSearchParams({ part: "contentDetails", maxResults: "50", playlistId: plId, key });
+    const { code, data } = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + qs.toString(), 10000);
+    if (code >= 400 || !data || !Array.isArray(data.items)) return [];
+    // playlistItems 单页最少可取 50，这里截断到前 25 条，避免列表过杂
+    const items = data.items.slice(0, 25);
+    for (const it of items) {
+      const vid = it && it.contentDetails && it.contentDetails.videoId
+        ? String(it.contentDetails.videoId).trim() : "";
+      if (vid) vids[vid] = true;
     }
     return Object.keys(vids);
   }
