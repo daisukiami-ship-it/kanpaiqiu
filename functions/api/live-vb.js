@@ -89,34 +89,30 @@ export async function onRequest(context) {
   const priorityItems = []; // 正在直播
   const priorityLater = []; // 即将开播预告
 
-  // 1) 并发拉各频道上传播放列表，收集近期 videoId
-  const plUrls = whitelist.map((cid) => {
+  // 1) 并发拉各频道上传播放列表（每频道 2 页 = 最多 100 条），收集 videoId
+  async function fetchChannelUploads(cid) {
     const plId = "UU" + cid.slice(2);
-    // playlistItems 单页上限 50 条，对所有频道统一拉满 50。
-    // 联合会类频道(如 FIPAV)平时狂传集锦，预告会被挤到最新 15 条窗口之外；
-    // 拉满 50 条即可把 upcoming 预告也纳入(与拉 15 条配额相同，均为 1 次 quota)。
-    const maxResults = "50";
-    const qs = new URLSearchParams({
-      part: "contentDetails",
-      maxResults,
-      playlistId: plId,
-      key,
-    });
-    return "https://www.googleapis.com/youtube/v3/playlistItems?" + qs.toString();
-  });
-
-  const plResults = await Promise.all(plUrls.map((u) => fetchJson(u, 10000)));
-  const videoIdSet = {};
-  for (const res of plResults) {
-    const j = res.data;
-    if (!j || !Array.isArray(j.items)) continue;
-    for (const it of j.items) {
-      const vid = it && it.contentDetails && it.contentDetails.videoId
-        ? String(it.contentDetails.videoId).trim()
-        : "";
-      if (vid) videoIdSet[vid] = true;
+    const vids = {};
+    let pageToken = "";
+    for (let p = 0; p < 2; p++) { // 2 页 × 50 = 最多 100 条
+      const qs = new URLSearchParams({ part: "contentDetails", maxResults: "50", playlistId: plId, key });
+      if (pageToken) qs.set("pageToken", pageToken);
+      const { code, data } = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + qs.toString(), 10000);
+      if (code >= 400 || !data || !Array.isArray(data.items)) break;
+      for (const it of data.items) {
+        const vid = it && it.contentDetails && it.contentDetails.videoId
+          ? String(it.contentDetails.videoId).trim() : "";
+        if (vid) vids[vid] = true;
+      }
+      if (!data.nextPageToken) break;
+      pageToken = data.nextPageToken;
     }
+    return Object.keys(vids);
   }
+
+  const allVideoIds = (await Promise.all(whitelist.map((cid) => fetchChannelUploads(cid)))).flat();
+  const videoIdSet = {};
+  for (const vid of allVideoIds) videoIdSet[vid] = true;
   const videoIds = Object.keys(videoIdSet);
 
   // 2) videos.list 批量判定 live/upcoming（每批 50）
@@ -140,6 +136,10 @@ export async function onRequest(context) {
       if (lbc !== "live" && lbc !== "upcoming") continue;
       const vid = v.id;
       if (seen[vid]) continue;
+      // 全局过滤沙滩排球（所有频道均生效）：beach(英)/비치(韩)/沙滩(中)
+      const titleRaw = sn.title || "";
+      const titleLower = titleRaw.toLowerCase();
+      if (titleLower.includes("beach") || titleRaw.includes("비치") || titleRaw.includes("沙滩")) continue;
       // 综合性频道（多项目大赛/综合体育台）只保留排球场次；专门排球频道全收
       // 英文用 volley：区分 Volleyball/Beach Volley 与 Handball/Futsal/Padel/Table Tennis。
       // 韩文用 배구：KBS N SPORTS 等韩文标题里排球关键词为 배구（非 volley）。
