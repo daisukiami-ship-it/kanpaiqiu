@@ -134,6 +134,9 @@ export async function onRequest(context) {
       if (lbc !== "live" && lbc !== "upcoming") continue;
       const vid = v.id;
       if (seen[vid]) continue;
+      const lsd = v.liveStreamingDetails || {};
+      // 已结束的直播（liveStreamingDetails 含 actualEndTime）不再展示
+      if (lsd.actualEndTime) continue;
       // 全局过滤沙滩排球（所有频道均生效）：beach(英)/비치(韩)/沙滩(中)
       const titleRaw = sn.title || "";
       const titleLower = titleRaw.toLowerCase();
@@ -146,8 +149,9 @@ export async function onRequest(context) {
         const t = title.toLowerCase();
         if (!t.includes("volley") && !title.includes("배구")) continue;
       }
+      // upcoming 但无 scheduledStartTime：多为“直播已结束却未翻回 none”的卡住条目，丢弃
+      if (lbc === "upcoming" && !lsd.scheduledStartTime) continue;
       seen[vid] = true;
-      const lsd = v.liveStreamingDetails || {};
       const scheduledStart = lsd.scheduledStartTime || "";
       const entry = {
         kind: "youtube#searchResult",
