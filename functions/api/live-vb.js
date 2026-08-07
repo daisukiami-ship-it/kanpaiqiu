@@ -36,6 +36,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UChQi8LJ0aaACdXuZLpCeqKw", // TopVolley Belgium (@topvolleybelgium_, 比利时排球联赛)
   "UCXqb0HRIQMQiObmdgYvdZJg", // CAVB Live Streaming (@cavb.africa, 非洲排球联合会)
   "UCG-MqP6-9tdHNB9TtjJIrdA", // Oceania Volleyball (@OceaniaVolleyball, 大洋洲排球联合会)
+  "UC2w2DZg9FTMWpoa9YKW7sXg", // OSSRB Odbojkaški savez Srbije (@OSSRBOdbojkaškisavezSrbije, 塞尔维亚排球联合会)
 ];
 
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
