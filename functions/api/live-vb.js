@@ -21,6 +21,13 @@ const MIXED_SPORT_CHANNELS = {
   "UCdkrHEDb1xT3gts9lct12Ug": "KBS N SPORTS", // @KBSNSPORTS_official 韩国综合体育台，仅留排球(含韩文 배구)
 };
 
+// 需 search 兜底的频道：其 upcoming 预告走 YouTube 独立直播事件、不进 uploads 播放列表，
+// 单靠 playlistItems 永远捞不到预告（live 仍在 uploads 里可正常显示）。
+// 对名单内频道额外用 search?eventType=upcoming 补一轮（每频道 +100 quota）。
+const SEARCH_UPCOMING_CHANNELS = {
+  "UCNMg6XDhRZI2QzL4pWOvP_w": "Volleyball World", // 预告不进 uploads，必须 search 兜底
+};
+
 const CHANNEL_WHITELIST_DEFAULT = [
   "UCjauoNHBQP5Pa_xH1cv-JRQ", // Asian Volleyball Confederation
   "UC8XRC858pOERvclUDb_d7rg", // European Volleyball
@@ -113,6 +120,32 @@ export async function onRequest(context) {
   const allVideoIds = (await Promise.all(whitelist.map((cid) => fetchChannelUploads(cid)))).flat();
   const videoIdSet = {};
   for (const vid of allVideoIds) videoIdSet[vid] = true;
+
+  // search 兜底：名单内频道的 upcoming 不进 uploads，用 search?eventType=upcoming 补捞
+  const searchUpcomingIds = {};
+  await Promise.all(
+    Object.keys(SEARCH_UPCOMING_CHANNELS).map(async (cid) => {
+      const qs = new URLSearchParams({
+        part: "snippet",
+        channelId: cid,
+        eventType: "upcoming",
+        type: "video",
+        maxResults: "20",
+        key,
+      });
+      const { code, data } = await fetchJson(
+        "https://www.googleapis.com/youtube/v3/search?" + qs.toString(),
+        10000
+      );
+      if (code >= 400 || !data || !Array.isArray(data.items)) return;
+      for (const it of data.items) {
+        const vid = it && it.id && it.id.videoId ? String(it.id.videoId).trim() : "";
+        if (vid) searchUpcomingIds[vid] = true;
+      }
+    })
+  );
+  for (const vid of Object.keys(searchUpcomingIds)) videoIdSet[vid] = true;
+
   const videoIds = Object.keys(videoIdSet);
 
   // 2) videos.list 批量判定 live/upcoming（每批 50）
