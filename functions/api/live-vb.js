@@ -39,6 +39,72 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UC2w2DZg9FTMWpoa9YKW7sXg", // OSSRB Odbojkaški savez Srbije (@OSSRBOdbojkaškisavezSrbije, 塞尔维亚排球联合会)
 ];
 
+// ---- Volleyball World 预告缓存（server-side 内存缓存 + 惰性刷新）----
+// VW 的 upcoming 预告走 YouTube 独立直播事件、不进 uploads 播放列表，
+// 单靠 playlistItems 永远捞不到。改用 search?eventType=upcoming 后台定时抓取一次、缓存到服务器，
+// 主页直接读缓存（零配额），不每次访问都 search（避免配额爆炸）。
+const VW_CHANNEL_ID = "UCNMg6XDhRZI2QzL4pWOvP_w";
+const VW_REFRESH_MS = 6 * 60 * 60 * 1000; // 缓存有效期 6h，过期才重新 search
+const VW_MAX_UPCOMING = 10; // 主页最多释放最近 10 场预告
+let _vwCache = null; // { ts, items:[{videoId,title,channelId,channelTitle,publishedAt,description,thumbnails,scheduledStart}] }
+let _vwLockUntil = 0; // 刷新锁：时间戳，过期自动释放（防 waitUntil 不支持时锁死）
+
+// 惰性刷新：缓存缺失或过期时触发一次后台 search（不阻塞当前请求）
+function maybeRefreshVw(key, context) {
+  if (_vwCache && Date.now() - _vwCache.ts <= VW_REFRESH_MS) return;
+  if (Date.now() < _vwLockUntil) return; // 正在刷新或刚失败锁定中
+  _vwLockUntil = Date.now() + 5 * 60 * 1000; // 最多锁 5 分钟，超时自愈
+  const refreshPromise = (async () => {
+    try {
+      const sqs = new URLSearchParams({
+        part: "snippet", channelId: VW_CHANNEL_ID, eventType: "upcoming",
+        type: "video", maxResults: "20", key,
+      });
+      const { code, data } = await fetchJson(
+        "https://www.googleapis.com/youtube/v3/search?" + sqs.toString(), 10000
+      );
+      if (code >= 400 || !data || !Array.isArray(data.items)) return;
+      const ids = data.items
+        .map((it) => (it && it.id && it.id.videoId ? String(it.id.videoId).trim() : ""))
+        .filter(Boolean);
+      if (!ids.length) { _vwCache = { ts: Date.now(), items: [] }; return; }
+      const vqs = new URLSearchParams({
+        part: "snippet,liveStreamingDetails", id: ids.join(","), key,
+      });
+      const { code: vcode, data: vdata } = await fetchJson(
+        "https://www.googleapis.com/youtube/v3/videos?" + vqs.toString(), 12000
+      );
+      const items = [];
+      if (vcode < 400 && vdata && Array.isArray(vdata.items)) {
+        for (const v of vdata.items) {
+          const sn = v.snippet || {};
+          if ((sn.liveBroadcastContent || "none") !== "upcoming") continue;
+          const lsd = v.liveStreamingDetails || {};
+          if (!lsd.scheduledStartTime) continue;
+          const titleRaw = sn.title || "";
+          const tl = titleRaw.toLowerCase();
+          if (tl.includes("beach") || titleRaw.includes("비치") || titleRaw.includes("沙滩")) continue;
+          items.push({
+            videoId: v.id, title: titleRaw,
+            channelId: sn.channelId || VW_CHANNEL_ID, channelTitle: sn.channelTitle || "",
+            publishedAt: sn.publishedAt || "", description: sn.description || "",
+            thumbnails: sn.thumbnails || {}, scheduledStart: lsd.scheduledStartTime,
+          });
+        }
+      }
+      _vwCache = { ts: Date.now(), items };
+    } catch (e) {
+      // 刷新失败：保留旧缓存，锁到期后会重试
+    } finally {
+      _vwLockUntil = 0;
+    }
+  })();
+  // CF Pages Functions 支持 context.waitUntil：保活后台刷新直到完成（否则可能返回后被冻结）
+  if (context && typeof context.waitUntil === "function") {
+    context.waitUntil(refreshPromise);
+  }
+}
+
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -115,6 +181,9 @@ export async function onRequest(context) {
   for (const vid of allVideoIds) videoIdSet[vid] = true;
   const videoIds = Object.keys(videoIdSet);
 
+  // 惰性刷新 VW 预告缓存（后台异步，不阻塞当前请求；过期才补一次 search）
+  maybeRefreshVw(key, context);
+
   // 2) videos.list 批量判定 live/upcoming（每批 50）
   for (let i = 0; i < videoIds.length; i += 50) {
     const chunk = videoIds.slice(i, i + 50);
@@ -179,6 +248,38 @@ export async function onRequest(context) {
     for (const e of upcomingBatch) priorityLater.push(e);
   }
 
+  // 合并 VW 缓存预告（惰性刷新的结果；已去重 + 全局沙滩过滤）
+  if (_vwCache && Array.isArray(_vwCache.items)) {
+    for (const c of _vwCache.items) {
+      const vid = c.videoId;
+      if (!vid || seen[vid]) continue;
+      const titleRaw = c.title || "";
+      const titleLower = titleRaw.toLowerCase();
+      if (titleLower.includes("beach") || titleRaw.includes("비치") || titleRaw.includes("沙滩")) continue;
+      if (!c.scheduledStart) continue;
+      seen[vid] = true;
+      priorityLater.push({
+        kind: "youtube#searchResult",
+        id: { kind: "youtube#video", videoId: vid },
+        snippet: {
+          publishedAt: c.publishedAt || "",
+          channelId: c.channelId || VW_CHANNEL_ID,
+          title: c.title || "",
+          description: c.description || "",
+          thumbnails: c.thumbnails || {},
+          channelTitle: c.channelTitle || "",
+          liveBroadcastContent: "upcoming",
+        },
+        _priority: true,
+        _state: "upcoming",
+        _scheduledStart: c.scheduledStart,
+      });
+    }
+  }
+  priorityLater.sort((a, b) =>
+    a._scheduledStart < b._scheduledStart ? -1 : a._scheduledStart > b._scheduledStart ? 1 : 0
+  );
+
   const items = priorityItems.concat(priorityLater);
 
   // 过滤已过期预告：开播时间早于当前(空值保留,前端不显示时间)
@@ -190,17 +291,28 @@ export async function onRequest(context) {
     if (isNaN(t)) return true;
     return t >= nowMs - 60 * 60 * 1000; // 留 1 小时缓冲,刚结束的也先保留
   });
-  const liveN = filtered.filter((it) => it._state === "live").length;
-  const upN = filtered.filter((it) => it._state === "upcoming").length;
+
+  // 释放最近 VW_MAX_UPCOMING 场预告（按开赛时间升序），直播始终保留
+  const liveItems = filtered.filter((it) => it._state === "live");
+  const upItems = filtered
+    .filter((it) => it._state === "upcoming")
+    .sort((a, b) =>
+      a._scheduledStart < b._scheduledStart ? -1 : a._scheduledStart > b._scheduledStart ? 1 : 0
+    )
+    .slice(0, VW_MAX_UPCOMING);
+  const finalItems = liveItems.concat(upItems);
+
+  const liveN = liveItems.length;
+  const upN = upItems.length;
   return jsonResponse({
     kind: "youtube#searchListResponse",
     pageInfo: {
-      totalResults: filtered.length,
-      resultsPerPage: filtered.length,
+      totalResults: finalItems.length,
+      resultsPerPage: finalItems.length,
       liveCount: liveN,
       upcomingCount: upN,
-      priorityCount: filtered.length,
+      priorityCount: finalItems.length,
     },
-    items: filtered,
+    items: finalItems,
   });
 }
