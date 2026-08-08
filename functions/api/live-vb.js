@@ -110,16 +110,12 @@ function jsonResponse(obj, status = 200, extraHeaders = {}) {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=120",
+      "Cache-Control": "public, max-age=60",
       "Access-Control-Allow-Origin": "*",
       ...extraHeaders,
     },
   });
 }
-
-// 全局响应短缓存：避免客户端自动刷新把 YouTube 配额放大（每 ~240s 才真实抓一次）
-const RESP_CACHE_TTL = 240 * 1000;
-let _respCache = null; // { ts, status, body }
 
 async function fetchJson(url, timeoutMs = 12000) {
   const ctrl = new AbortController();
@@ -148,18 +144,6 @@ export async function onRequest(context) {
       { error: { message: "Server missing YOUTUBE_API_KEY (set it in Pages env vars)" } },
       500
     );
-  }
-
-  // 服务端短缓存命中：直接返回，不碰 YouTube（CDN 边缘也会缓存 120s）
-  if (_respCache && Date.now() - _respCache.ts < RESP_CACHE_TTL) {
-    return new Response(_respCache.body, {
-      status: _respCache.status,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "public, max-age=120",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
   }
 
   // 白名单：优先环境变量（逗号分隔），否则用内置常量
@@ -196,9 +180,6 @@ export async function onRequest(context) {
   const videoIdSet = {};
   for (const vid of allVideoIds) videoIdSet[vid] = true;
   const videoIds = Object.keys(videoIdSet);
-
-  // 惰性刷新 VW 预告缓存（后台异步，不阻塞当前请求；过期才补一次 search）
-  maybeRefreshVw(key, context);
 
   // 2) videos.list 批量判定 live/upcoming（每批 50）
   for (let i = 0; i < videoIds.length; i += 50) {
@@ -264,38 +245,6 @@ export async function onRequest(context) {
     for (const e of upcomingBatch) priorityLater.push(e);
   }
 
-  // 合并 VW 缓存预告（惰性刷新的结果；已去重 + 全局沙滩过滤）
-  if (_vwCache && Array.isArray(_vwCache.items)) {
-    for (const c of _vwCache.items) {
-      const vid = c.videoId;
-      if (!vid || seen[vid]) continue;
-      const titleRaw = c.title || "";
-      const titleLower = titleRaw.toLowerCase();
-      if (titleLower.includes("beach") || titleRaw.includes("비치") || titleRaw.includes("沙滩")) continue;
-      if (!c.scheduledStart) continue;
-      seen[vid] = true;
-      priorityLater.push({
-        kind: "youtube#searchResult",
-        id: { kind: "youtube#video", videoId: vid },
-        snippet: {
-          publishedAt: c.publishedAt || "",
-          channelId: c.channelId || VW_CHANNEL_ID,
-          title: c.title || "",
-          description: c.description || "",
-          thumbnails: c.thumbnails || {},
-          channelTitle: c.channelTitle || "",
-          liveBroadcastContent: "upcoming",
-        },
-        _priority: true,
-        _state: "upcoming",
-        _scheduledStart: c.scheduledStart,
-      });
-    }
-  }
-  priorityLater.sort((a, b) =>
-    a._scheduledStart < b._scheduledStart ? -1 : a._scheduledStart > b._scheduledStart ? 1 : 0
-  );
-
   const items = priorityItems.concat(priorityLater);
 
   // 过滤已过期预告：开播时间早于当前(空值保留,前端不显示时间)
@@ -308,37 +257,17 @@ export async function onRequest(context) {
     return t >= nowMs - 60 * 60 * 1000; // 留 1 小时缓冲,刚结束的也先保留
   });
 
-  // 释放最近 VW_MAX_UPCOMING 场预告（按开赛时间升序），直播始终保留
-  const liveItems = filtered.filter((it) => it._state === "live");
-  const upItems = filtered
-    .filter((it) => it._state === "upcoming")
-    .sort((a, b) =>
-      a._scheduledStart < b._scheduledStart ? -1 : a._scheduledStart > b._scheduledStart ? 1 : 0
-    )
-    .slice(0, VW_MAX_UPCOMING);
-  const finalItems = liveItems.concat(upItems);
-
-  const liveN = liveItems.length;
-  const upN = upItems.length;
-  const payload = {
+  const liveN = filtered.filter((it) => it._state === "live").length;
+  const upN = filtered.filter((it) => it._state === "upcoming").length;
+  return jsonResponse({
     kind: "youtube#searchListResponse",
     pageInfo: {
-      totalResults: finalItems.length,
-      resultsPerPage: finalItems.length,
+      totalResults: filtered.length,
+      resultsPerPage: filtered.length,
       liveCount: liveN,
       upcomingCount: upN,
-      priorityCount: finalItems.length,
+      priorityCount: filtered.length,
     },
-    items: finalItems,
-  };
-  const body = JSON.stringify(payload);
-  _respCache = { ts: Date.now(), status: 200, body };
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=120",
-      "Access-Control-Allow-Origin": "*",
-    },
+    items: filtered,
   });
 }

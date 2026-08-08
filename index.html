@@ -457,8 +457,7 @@
       if (pane) pane.classList.add('active');
     });
   });
-  // 自动刷新：每 120s 拉一次；服务端有 240s 短缓存，YouTube 真实请求至多每 240s 一次，配额安全
-  setInterval(fetchLive, 120000);
+  // 自动刷新已关闭，需要时点击右上角刷新按钮手动更新。
 })();
 </script>
 </body>
