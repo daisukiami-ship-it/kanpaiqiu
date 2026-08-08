@@ -110,12 +110,16 @@ function jsonResponse(obj, status = 200, extraHeaders = {}) {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=60",
+      "Cache-Control": "public, max-age=120",
       "Access-Control-Allow-Origin": "*",
       ...extraHeaders,
     },
   });
 }
+
+// 全局响应短缓存：避免客户端自动刷新把 YouTube 配额放大（每 ~240s 才真实抓一次）
+const RESP_CACHE_TTL = 240 * 1000;
+let _respCache = null; // { ts, status, body }
 
 async function fetchJson(url, timeoutMs = 12000) {
   const ctrl = new AbortController();
@@ -144,6 +148,18 @@ export async function onRequest(context) {
       { error: { message: "Server missing YOUTUBE_API_KEY (set it in Pages env vars)" } },
       500
     );
+  }
+
+  // 服务端短缓存命中：直接返回，不碰 YouTube（CDN 边缘也会缓存 120s）
+  if (_respCache && Date.now() - _respCache.ts < RESP_CACHE_TTL) {
+    return new Response(_respCache.body, {
+      status: _respCache.status,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=120",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
 
   // 白名单：优先环境变量（逗号分隔），否则用内置常量
@@ -304,7 +320,7 @@ export async function onRequest(context) {
 
   const liveN = liveItems.length;
   const upN = upItems.length;
-  return jsonResponse({
+  const payload = {
     kind: "youtube#searchListResponse",
     pageInfo: {
       totalResults: finalItems.length,
@@ -314,5 +330,15 @@ export async function onRequest(context) {
       priorityCount: finalItems.length,
     },
     items: finalItems,
+  };
+  const body = JSON.stringify(payload);
+  _respCache = { ts: Date.now(), status: 200, body };
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "public, max-age=120",
+      "Access-Control-Allow-Origin": "*",
+    },
   });
 }
