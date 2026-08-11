@@ -20,6 +20,7 @@ const MIXED_SPORT_CHANNELS = {
   // 注：Latina Deportes (@LatinaDeportes) 已从白名单整体移除，不再抓取。
   "UCdkrHEDb1xT3gts9lct12Ug": "KBS N SPORTS", // @KBSNSPORTS_official 韩国综合体育台，仅留排球(含韩文 배구)
   "UCutSfYmIwdDOb4Ba7ObcaAQ": "HOY媒體網絡", // @hkhoy 香港综合电视网，仅留排球(含中文 排球)
+  "UCObdCja7XEDvr0mpkxXF8_Q": "Sportowy Vibe", // @sportowy_vibe 波兰体育资讯频道，仅留排球(含波兰文 siatkówk)
 };
 
 const CHANNEL_WHITELIST_DEFAULT = [
@@ -39,6 +40,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCG-MqP6-9tdHNB9TtjJIrdA", // Oceania Volleyball (@OceaniaVolleyball, 大洋洲排球联合会)
   "UC2w2DZg9FTMWpoa9YKW7sXg", // OSSRB Odbojkaški savez Srbije (@OSSRBOdbojkaškisavezSrbije, 塞尔维亚排球联合会)
   "UCutSfYmIwdDOb4Ba7ObcaAQ", // HOY媒體網絡 (@hkhoy, 香港综合电视网 76/77/78台，仅留排球)
+  "UCObdCja7XEDvr0mpkxXF8_Q", // Sportowy Vibe (@sportowy_vibe, 波兰体育资讯频道，仅留排球)
 ];
 
 // ---- Volleyball World 预告缓存（server-side 内存缓存 + 惰性刷新）----
@@ -217,8 +219,8 @@ export async function onRequest(context) {
       if (MIXED_SPORT_CHANNELS[sn.channelId]) {
         const title = (sn.title || "");
         const t = title.toLowerCase();
-        // 英文 volley / 韩文 배구 / 中文 排球
-        if (!t.includes("volley") && !title.includes("배구") && !title.includes("排球")) continue;
+        // 英文 volley / 韩文 배구 / 中文 排球 / 波兰文 siatkówk(a)
+        if (!t.includes("volley") && !title.includes("배구") && !title.includes("排球") && !t.includes("siatkówk")) continue;
       }
       // upcoming 但无 scheduledStartTime：多为“直播已结束却未翻回 none”的卡住条目，丢弃
       if (lbc === "upcoming" && !lsd.scheduledStartTime) continue;
