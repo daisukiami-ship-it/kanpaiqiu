@@ -220,7 +220,7 @@ export async function onRequest(context) {
         const title = (sn.title || "");
         const t = title.toLowerCase();
         // 英文 volley / 韩文 배구 / 中文 排球 / 波兰文 siatkówk(a)
-        if (!t.includes("volley") && !title.includes("배구") && !title.includes("排球") && !t.includes("siatkówk")) continue;
+        if (!t.includes("volley") && !title.includes("배구") && !title.includes("排球") && !t.includes("siatków")) continue;
       }
       // upcoming 但无 scheduledStartTime：多为“直播已结束却未翻回 none”的卡住条目，丢弃
       if (lbc === "upcoming" && !lsd.scheduledStartTime) continue;
