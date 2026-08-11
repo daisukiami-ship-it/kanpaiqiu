@@ -41,7 +41,6 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UC2w2DZg9FTMWpoa9YKW7sXg", // OSSRB Odbojkaški savez Srbije (@OSSRBOdbojkaškisavezSrbije, 塞尔维亚排球联合会)
   "UCutSfYmIwdDOb4Ba7ObcaAQ", // HOY媒體網絡 (@hkhoy, 香港综合电视网 76/77/78台，仅留排球)
   "UCObdCja7XEDvr0mpkxXF8_Q", // Sportowy Vibe (@sportowy_vibe, 波兰体育资讯频道，仅留排球)
-  "UCObdCja7XEDvr0mpkxXF8_Q", // Sportowy Vibe (@sportowy_vibe, 波兰体育资讯频道，仅留排球)
 ];
 
 // ---- Volleyball World 预告缓存（server-side 内存缓存 + 惰性刷新）----
