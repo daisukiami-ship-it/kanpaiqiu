@@ -326,13 +326,17 @@
 
     // —— 分辨率切换（VHS representations API，纯前端、无需插件）—— //
     // 独立工具条：挂播放器下方 #qbar，不塞进 VJS 控制条，避免被重排吞掉。
-    // 稳定性：loadedmetadata/loadedplaylist/repselected 多事件 + 轮询兜底，确保各时机都能拿到档位。
+    // 稳定性：loadedmetadata/loadedplaylist/repselected 多事件 + 轮询兜底。
+    // 兜底：VHS 对“视频轨+独立音频组”的 master 可能 representations() 返回空，
+    //   此时改回“直接 fetch 原始 master 解析 STREAM-INF”拿档位（最稳）。
     var currentQuality = 'auto';
     var qState = null;
     var qPollTimer = null;
     var qSettled = false; // 已成功建出菜单则停止轮询
+    var qMasterUrl = src; // 记住当前 master 地址，用于回退解析
 
-    function pickLevels(reps){
+    // 把 VHS representations() 结果归并成 {levels,heights}
+    function pickFromReps(reps){
       var levels = {};
       reps.forEach(function(r){
         var h = r.height || 0;
@@ -340,19 +344,80 @@
         if (!levels[h] || (r.bitrate||0) > (levels[h].bitrate||0)) levels[h] = r;
       });
       var heights = Object.keys(levels).map(Number).sort(function(a,b){ return b-a; });
-      return { levels: levels, heights: heights };
+      return { levels: levels, heights: heights, fromReps: true };
+    }
+
+    // 回退：直接解析 master playlist 文本，提取所有视频 STREAM-INF
+    function pickFromMasterText(text){
+      var lines = text.split(/\r?\n/);
+      var levels = {};
+      for (var i=0;i<lines.length;i++){
+        var ln = lines[i];
+        if (ln.indexOf('EXT-X-STREAM-INF') === -1) continue;
+        if (ln.indexOf('AUDIO=') !== -1 && ln.indexOf('RESOLUTION=') === -1) continue; // 纯音频组跳过
+        var rh = ln.match(/RESOLUTION=(\d+)x(\d+)/);
+        var bh = ln.match(/BANDWIDTH=(\d+)/);
+        if (!rh) continue;
+        var h = parseInt(rh[2], 10);
+        var bw = bh ? parseInt(bh[1], 10) : 0;
+        if (!levels[h] || bw > (levels[h].bitrate||0)) levels[h] = { height: h, bitrate: bw, _line: ln };
+      }
+      var heights = Object.keys(levels).map(Number).sort(function(a,b){ return b-a; });
+      return { levels: levels, heights: heights, fromReps: false };
+    }
+
+    // 选中某一档（或 Auto）：优先走 VHS representations().enabled()，失败回退 player.src()
+    function applyQuality(picked, isAuto, heightVal){
+      if (isAuto){
+        currentQuality = 'auto';
+        if (picked.fromReps){
+          try { picked._reps.forEach(function(r){ r.enabled(true); }); } catch(e){}
+        } else {
+          player.src({ src: qMasterUrl, type: 'application/x-mpegURL' });
+        }
+      } else {
+        currentQuality = heightVal;
+        if (picked.fromReps){
+          try {
+            picked._reps.forEach(function(r){ r.enabled(false); });
+            picked.levels[heightVal].enabled(true);
+          } catch(e){ player.src({ src: qMasterUrl, type: 'application/x-mpegURL' }); }
+        } else {
+          // 用 master 里该高度的子分片 URL（从 master URL 目录拼接 index_<h>.m3u8）
+          var sub = qMasterUrl.replace(/index\.m3u8$/i, 'index_' + heightVal + '.m3u8');
+          player.src({ src: sub, type: 'application/x-mpegURL' });
+        }
+      }
     }
 
     function buildQualityMenu(){
       if (qSettled) return;
+      var picked = null;
       var vhs = player.vhs;
-      if (!vhs || !vhs.representations) return;
-      var reps;
-      try { reps = vhs.representations(); } catch(e){ return; }
-      if (!reps || !reps.length) return;
-
-      var picked = pickLevels(reps);
-      if (!picked.heights.length) return;
+      // 优先 VHS representations()
+      if (vhs && vhs.representations){
+        var reps;
+        try { reps = vhs.representations(); } catch(e){ reps = null; }
+        if (reps && reps.length){
+          var pr = pickFromReps(reps);
+          if (pr.heights.length) picked = pr;
+        }
+      }
+      // 回退：直接 fetch master 解析 STREAM-INF
+      if (!picked){
+        try {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', qMasterUrl, false); // 同步，构建菜单时用
+          if (referrerInput && referrerInput.value) xhr.setRequestHeader('Referer', referrerInput.value);
+          xhr.send();
+          if (xhr.status === 200 && xhr.responseText){
+            var pm = pickFromMasterText(xhr.responseText);
+            if (pm.heights.length) picked = pm;
+          }
+        } catch(e){}
+      }
+      if (!picked || !picked.heights.length) return;
+      picked._reps = (picked.fromReps && vhs && vhs.representations) ? vhs.representations() : null;
 
       var qbar = document.getElementById('qbar');
       var qbtns = document.getElementById('qbtns');
@@ -364,17 +429,8 @@
       qbar.classList.add('show');
       qbtns.innerHTML = '';
 
-      function select(isAuto, heightVal){
-        if (isAuto){
-          currentQuality = 'auto';
-          try { reps.forEach(function(r){ r.enabled(true); }); } catch(err){}
-        } else {
-          currentQuality = heightVal;
-          try {
-            reps.forEach(function(r){ r.enabled(false); });
-            picked.levels[heightVal].enabled(true);
-          } catch(err){}
-        }
+      function selectItem(isAuto, heightVal){
+        applyQuality(picked, isAuto, heightVal);
         qbtns.querySelectorAll('.qbtn').forEach(function(el){ el.classList.remove('active'); });
         var sel = isAuto ? qbtns.querySelector('[data-auto]') : qbtns.querySelector('[data-h="'+heightVal+'"]');
         if (sel) sel.classList.add('active');
@@ -386,7 +442,7 @@
         b.className = 'qbtn' + (currentQuality === (isAuto ? 'auto' : heightVal) ? ' active' : '');
         if (isAuto) b.setAttribute('data-auto','1'); else b.setAttribute('data-h', String(heightVal));
         b.textContent = label;
-        b.addEventListener('click', function(){ select(isAuto, heightVal); });
+        b.addEventListener('click', function(){ selectItem(isAuto, heightVal); });
         qbtns.appendChild(b);
       }
       addItem('Auto', true);
