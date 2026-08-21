@@ -116,17 +116,16 @@
   .live-list::-webkit-scrollbar{width:8px;}
   .live-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
   footer{max-width:1400px;margin:0 auto;padding:24px 20px 40px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);}
-  /* 分辨率切换菜单（VHS representations，纯前端无插件） */
-  .qsel{position:relative;display:flex;align-items:center;cursor:pointer;flex:0 0 auto;}
-  .qsel-btn{background:transparent;border:none;color:#fff;font-size:12px;font-weight:600;
-    padding:0 10px;height:100%;cursor:pointer;font-family:inherit;white-space:nowrap;}
-  .qsel-btn:hover{color:var(--brand);}
-  .qsel-menu{position:absolute;bottom:100%;right:0;margin-bottom:10px;background:#1a2233;
-    border:1px solid #2b3a52;border-radius:8px;padding:4px;min-width:104px;
-    box-shadow:0 8px 24px rgba(0,0,0,.55);z-index:40;}
-  .qsel-item{padding:7px 14px;font-size:12px;color:#cfd8e6;white-space:nowrap;border-radius:6px;cursor:pointer;}
-  .qsel-item:hover{background:#243049;color:#fff;}
-  .qsel-item.active{color:#4b9bff;font-weight:700;}
+  /* 分辨率切换工具条（独立，挂播放器下方，避免被 VJS 控制条重排吞掉） */
+  .qbar{display:none;align-items:center;gap:8px;margin-top:10px;background:var(--panel);
+    border:1px solid var(--border);border-radius:10px;padding:8px 12px;}
+  .qbar.show{display:flex;}
+  .qbar .qlabel{font-size:12px;color:var(--muted);white-space:nowrap;}
+  .qbar .qbtns{display:flex;flex-wrap:wrap;gap:6px;}
+  .qbar .qbtn{background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    font-size:12px;font-weight:600;padding:5px 12px;border-radius:8px;cursor:pointer;font-family:inherit;transition:.12s;}
+  .qbar .qbtn:hover{border-color:var(--brand);color:var(--brand);}
+  .qbar .qbtn.active{background:var(--brand);border-color:var(--brand);color:#fff;}
 </style>
 </head>
 <body>
@@ -166,6 +165,10 @@
         </div>
       </div>
       <div id="status" class="status"></div>
+      <div id="qbar" class="qbar">
+        <span class="qlabel">分辨率</span>
+        <div id="qbtns" class="qbtns"></div>
+      </div>
 
       <div class="card">
         <h2>使用说明</h2>
@@ -242,6 +245,8 @@
   var errMsg = document.getElementById('errMsg');
   var ytWatch = document.getElementById('ytWatch');
   var statusEl = document.getElementById('status');
+  var qbar = document.getElementById('qbar');
+  var qbtns = document.getElementById('qbtns');
 
   var player = null;
   var ytWatchUrl = null;
@@ -260,13 +265,9 @@
     else if (ytWatchUrl){ ytWatch.href = ytWatchUrl; ytWatch.style.display = 'inline-block'; }
   }
   function hideError(){ errBar.classList.remove('show'); }
+  function hideQualityBar(){ if (qbar) qbar.classList.remove('show'); if (qbtns) qbtns.innerHTML = ''; }
 
-  // 点击空白处关闭分辨率菜单（全局只挂一次）
-  document.addEventListener('click', function(e){
-    if (!(e.target.closest && e.target.closest('.qsel'))){
-      document.querySelectorAll('.qsel-menu').forEach(function(m){ m.style.display = 'none'; });
-    }
-  });
+  // 点击空白处关闭分辨率菜单（全局只挂一次，已弃用 hover 菜单，改用下方工具条）
 
   // 高级选项展开/收起
   advToggle.addEventListener('click', function(){
@@ -277,6 +278,7 @@
   });
 
   function disposePlayer(){
+    hideQualityBar();
     if (player){ try { player.dispose(); } catch(e){} player = null; }
   }
 
@@ -323,6 +325,7 @@
     });
 
     // —— 分辨率切换（VHS representations API，纯前端、无需插件）—— //
+    // 独立工具条：挂播放器下方 #qbar，不塞进 VJS 控制条，避免被重排吞掉。
     var currentQuality = 'auto';
     var qualityBuilt = false;
     var qState = null;
@@ -343,48 +346,38 @@
       var heights = Object.keys(levels).map(Number).sort(function(a,b){ return b-a; });
       if (!heights.length) return;
 
-      if (!qualityBuilt){
-        qualityBuilt = true;
-        var bar = player.controlBar && player.controlBar.el();
-        if (!bar){ qualityBuilt = false; return; }
-        var wrap = document.createElement('div');
-        wrap.className = 'qsel vjs-control';
-        wrap.innerHTML = '<button type="button" class="qsel-btn">Auto</button>' +
-          '<div class="qsel-menu" style="display:none;"></div>';
-        bar.appendChild(wrap);
-        qState = { wrap:wrap, btn:wrap.querySelector('.qsel-btn'), menu:wrap.querySelector('.qsel-menu') };
-        qState.btn.addEventListener('click', function(e){
-          e.stopPropagation();
-          qState.menu.style.display = (qState.menu.style.display === 'none' ? 'block' : 'none');
-        });
+      var qbar = document.getElementById('qbar');
+      var qbtns = document.getElementById('qbtns');
+      if (!qbar || !qbtns) return;
+
+      qState = { levels: levels, heights: heights, qbar: qbar, qbtns: qbtns };
+      qbar.classList.add('show');
+      qbtns.innerHTML = '';
+
+      function select(isAuto, heightVal){
+        if (isAuto){
+          currentQuality = 'auto';
+          try { reps.forEach(function(r){ r.enabled(true); }); } catch(err){}
+        } else {
+          currentQuality = heightVal;
+          try {
+            reps.forEach(function(r){ r.enabled(false); });
+            levels[heightVal].enabled(true);
+          } catch(err){}
+        }
+        qbtns.querySelectorAll('.qbtn').forEach(function(el){ el.classList.remove('active'); });
+        var sel = isAuto ? qbtns.querySelector('[data-auto]') : qbtns.querySelector('[data-h="'+heightVal+'"]');
+        if (sel) sel.classList.add('active');
       }
-      qState.levels = levels;
-      qState.heights = heights;
-      qState.menu.innerHTML = '';
 
       function addItem(label, isAuto, heightVal){
-        var it = document.createElement('div');
-        it.className = 'qsel-item' + (currentQuality === (isAuto ? 'auto' : heightVal) ? ' active' : '');
-        it.textContent = label;
-        it.addEventListener('click', function(e){
-          e.stopPropagation();
-          if (isAuto){
-            currentQuality = 'auto';
-            try { reps.forEach(function(r){ r.enabled(true); }); } catch(err){}
-            qState.btn.textContent = 'Auto';
-          } else {
-            currentQuality = heightVal;
-            try {
-              reps.forEach(function(r){ r.enabled(false); });
-              levels[heightVal].enabled(true);
-            } catch(err){}
-            qState.btn.textContent = heightVal + 'p';
-          }
-          qState.menu.querySelectorAll('.qsel-item').forEach(function(el){ el.classList.remove('active'); });
-          it.classList.add('active');
-          qState.menu.style.display = 'none';
-        });
-        qState.menu.appendChild(it);
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'qbtn' + (currentQuality === (isAuto ? 'auto' : heightVal) ? ' active' : '');
+        if (isAuto) b.setAttribute('data-auto','1'); else b.setAttribute('data-h', String(heightVal));
+        b.textContent = label;
+        b.addEventListener('click', function(){ select(isAuto, heightVal); });
+        qbtns.appendChild(b);
       }
       addItem('Auto', true);
       heights.forEach(function(h){ addItem(h + 'p', false, h); });
@@ -398,6 +391,7 @@
   // —— YouTube 嵌入（使用 IFrame Player API，可捕获错误 153 等嵌入限制）—— //
   function playYouTube(id){
     hideError();
+    hideQualityBar();
     disposePlayer();
     hlsWrap.style.display = 'none';
     ytWrap.style.display = 'block';
