@@ -347,12 +347,23 @@
       return { levels: levels, heights: heights, fromReps: true };
     }
 
-    // 回退：直接解析 master playlist 文本，提取所有视频 STREAM-INF
+    // 回退：直接解析 master playlist 文本，提取所有视频 STREAM-INF + 音频 MEDIA 行
     function pickFromMasterText(text){
       var lines = text.split(/\r?\n/);
       var levels = {};
+      var mediaLines = []; // 保留 EXT-X-MEDIA（音频等），切换清晰度时一并带去，避免丢音轨
+      // master 目录（用于把相对 URI 改成绝对，喂 data: URL 后相对基址失效）
+      var baseDir = qMasterUrl.replace(/[^/]*$/, '');
       for (var i=0;i<lines.length;i++){
         var ln = lines[i];
+        if (ln.indexOf('EXT-X-MEDIA') === 0){
+          // 把 URI="xxx.m3u8" 相对路径补全为绝对，避免 data: URL 基址问题
+          ln = ln.replace(/URI="([^"]+)"/, function(m, u){
+            if (/^[a-z]+:\/\//i.test(u)) return m;
+            return 'URI="' + baseDir + u + '"';
+          });
+          mediaLines.push(ln); continue;
+        }
         if (ln.indexOf('EXT-X-STREAM-INF') === -1) continue;
         if (ln.indexOf('AUDIO=') !== -1 && ln.indexOf('RESOLUTION=') === -1) continue; // 纯音频组跳过
         var rh = ln.match(/RESOLUTION=(\d+)x(\d+)/);
@@ -363,7 +374,40 @@
         if (!levels[h] || bw > (levels[h].bitrate||0)) levels[h] = { height: h, bitrate: bw, _line: ln };
       }
       var heights = Object.keys(levels).map(Number).sort(function(a,b){ return b-a; });
-      return { levels: levels, heights: heights, fromReps: false };
+      return { levels: levels, heights: heights, fromReps: false, mediaLines: mediaLines };
+    }
+
+    // 生成“只保留某高度 STREAM-INF + 完整音频 MEDIA”的裁剪版 master（data URL），切清晰度时不丢音轨
+    function buildTrimmedMaster(picked, heightVal){
+      var baseDir = qMasterUrl.replace(/[^/]*$/, '');
+      // 先扫描原始文本，记录每个 STREAM-INF 行 -> 它的子分片 URI 行
+      var rawLines = (picked._rawText||'').split(/\r?\n/);
+      var infToUri = {};
+      for (var i=0;i<rawLines.length-1;i++){
+        if (rawLines[i].indexOf('EXT-X-STREAM-INF') === 0){
+          var nxt = rawLines[i+1].trim();
+          if (nxt && nxt.indexOf('#') !== 0) infToUri[rawLines[i]] = nxt;
+        }
+      }
+      var parts = [ '#EXTM3U' ];
+      (picked.mediaLines||[]).forEach(function(m){ parts.push(m); });
+      var target = picked.levels[heightVal];
+      if (target && target._line){
+        parts.push(target._line);
+        var uri = infToUri[target._line];
+        if (uri){
+          if (!/^[a-z]+:\/\//i.test(uri)) uri = baseDir + uri;
+          parts.push(uri);
+        }
+      } else {
+        Object.keys(picked.levels).forEach(function(h){
+          parts.push(picked.levels[h]._line);
+          var u2 = infToUri[picked.levels[h]._line];
+          if (u2){ if (!/^[a-z]+:\/\//i.test(u2)) u2 = baseDir + u2; parts.push(u2); }
+        });
+      }
+      var txt = parts.join('\n') + '\n';
+      return 'data:application/vnd.apple.mpegurl;charset=utf-8,' + encodeURIComponent(txt);
     }
 
     // 选中某一档（或 Auto）：优先走 VHS representations().enabled()，失败回退 player.src()
@@ -381,11 +425,10 @@
           try {
             picked._reps.forEach(function(r){ r.enabled(false); });
             picked.levels[heightVal].enabled(true);
-          } catch(e){ player.src({ src: qMasterUrl, type: 'application/x-mpegURL' }); }
+          } catch(e){ player.src({ src: buildTrimmedMaster(picked, heightVal), type: 'application/x-mpegURL' }); }
         } else {
-          // 用 master 里该高度的子分片 URL（从 master URL 目录拼接 index_<h>.m3u8）
-          var sub = qMasterUrl.replace(/index\.m3u8$/i, 'index_' + heightVal + '.m3u8');
-          player.src({ src: sub, type: 'application/x-mpegURL' });
+          // 裁剪版 master：保留音频 MEDIA 行，避免选具体档位时丢音轨
+          player.src({ src: buildTrimmedMaster(picked, heightVal), type: 'application/x-mpegURL' });
         }
       }
     }
@@ -412,6 +455,7 @@
           xhr.send();
           if (xhr.status === 200 && xhr.responseText){
             var pm = pickFromMasterText(xhr.responseText);
+            pm._rawText = xhr.responseText; // 供裁剪版 master 找回子分片 URI 行
             if (pm.heights.length) picked = pm;
           }
         } catch(e){}
