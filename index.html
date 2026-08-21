@@ -326,17 +326,13 @@
 
     // —— 分辨率切换（VHS representations API，纯前端、无需插件）—— //
     // 独立工具条：挂播放器下方 #qbar，不塞进 VJS 控制条，避免被重排吞掉。
+    // 稳定性：loadedmetadata/loadedplaylist/repselected 多事件 + 轮询兜底，确保各时机都能拿到档位。
     var currentQuality = 'auto';
-    var qualityBuilt = false;
     var qState = null;
-    function buildQualityMenu(){
-      var vhs = player.vhs;
-      if (!vhs || !vhs.representations) return;
-      var reps;
-      try { reps = vhs.representations(); } catch(e){ return; }
-      if (!reps || !reps.length) return;
+    var qPollTimer = null;
+    var qSettled = false; // 已成功建出菜单则停止轮询
 
-      // 按 height 归并（同高度取最高码率）
+    function pickLevels(reps){
       var levels = {};
       reps.forEach(function(r){
         var h = r.height || 0;
@@ -344,13 +340,27 @@
         if (!levels[h] || (r.bitrate||0) > (levels[h].bitrate||0)) levels[h] = r;
       });
       var heights = Object.keys(levels).map(Number).sort(function(a,b){ return b-a; });
-      if (!heights.length) return;
+      return { levels: levels, heights: heights };
+    }
+
+    function buildQualityMenu(){
+      if (qSettled) return;
+      var vhs = player.vhs;
+      if (!vhs || !vhs.representations) return;
+      var reps;
+      try { reps = vhs.representations(); } catch(e){ return; }
+      if (!reps || !reps.length) return;
+
+      var picked = pickLevels(reps);
+      if (!picked.heights.length) return;
 
       var qbar = document.getElementById('qbar');
       var qbtns = document.getElementById('qbtns');
       if (!qbar || !qbtns) return;
 
-      qState = { levels: levels, heights: heights, qbar: qbar, qbtns: qbtns };
+      qState = picked;
+      qSettled = true;
+      if (qPollTimer){ clearInterval(qPollTimer); qPollTimer = null; }
       qbar.classList.add('show');
       qbtns.innerHTML = '';
 
@@ -362,7 +372,7 @@
           currentQuality = heightVal;
           try {
             reps.forEach(function(r){ r.enabled(false); });
-            levels[heightVal].enabled(true);
+            picked.levels[heightVal].enabled(true);
           } catch(err){}
         }
         qbtns.querySelectorAll('.qbtn').forEach(function(el){ el.classList.remove('active'); });
@@ -380,12 +390,40 @@
         qbtns.appendChild(b);
       }
       addItem('Auto', true);
-      heights.forEach(function(h){ addItem(h + 'p', false, h); });
+      picked.heights.forEach(function(h){ addItem(h + 'p', false, h); });
     }
 
-    player.on('loadedmetadata', function(){ setTimeout(buildQualityMenu, 300); });
-    setTimeout(buildQualityMenu, 1200);
-    setTimeout(buildQualityMenu, 3500);
+    function startQualityWatch(){
+      qSettled = false;
+      currentQuality = 'auto';
+      // 多事件兜底
+      player.on('loadedmetadata', function(){ setTimeout(buildQualityMenu, 300); });
+      player.on('loadedplaylist', function(){ setTimeout(buildQualityMenu, 300); });
+      player.on('handledatablockloaded', function(){ setTimeout(buildQualityMenu, 200); });
+      player.on('repselected', function(){ setTimeout(buildQualityMenu, 200); });
+      // 轮询兜底：每 1s 试一次，最多 20 次（20s），拿到即停
+      if (qPollTimer) clearInterval(qPollTimer);
+      var tries = 0;
+      qPollTimer = setInterval(function(){
+        tries += 1;
+        buildQualityMenu();
+        if (qSettled || tries >= 20){
+          clearInterval(qPollTimer); qPollTimer = null;
+          // 20s 仍无多档：明确提示，避免“静默消失”让人误以为坏了
+          if (!qSettled){
+            var qbar = document.getElementById('qbar');
+            var qbtns = document.getElementById('qbtns');
+            if (qbar && qbtns){
+              qbar.classList.add('show');
+              qbtns.innerHTML = '<span style="color:var(--muted);font-size:12px;">该流无多档清晰度</span>';
+            }
+          }
+        }
+      }, 1000);
+      // 立刻先试一次
+      setTimeout(buildQualityMenu, 1200);
+    }
+    startQualityWatch();
   }
 
   // —— YouTube 嵌入（使用 IFrame Player API，可捕获错误 153 等嵌入限制）—— //
