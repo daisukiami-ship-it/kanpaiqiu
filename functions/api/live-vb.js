@@ -37,6 +37,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCG-MqP6-9tdHNB9TtjJIrdA", // Oceania Volleyball (@OceaniaVolleyball, 大洋洲排球联合会)
   "UC2w2DZg9FTMWpoa9YKW7sXg", // OSSRB Odbojkaški savez Srbije (@OSSRBOdbojkaškisavezSrbije, 塞尔维亚排球联合会)
   "UC6ZS0TLfErMqfPsBr65bldQ", // Reinas del Caribe (@ReinasdelCaribe, 多米尼加国家女子排球队官方频道)
+  "UC8k85cdzfYHUsWjplQOqa_w", // Confederación Sudamericana de Voleibol (@voleysur, 南美排球联合会 CSV)
   "UCutSfYmIwdDOb4Ba7ObcaAQ", // HOY媒體網絡 (@hkhoy, 香港综合电视网 76/77/78台，仅留排球)
   "UCObdCja7XEDvr0mpkxXF8_Q", // Sportowy Vibe (@sportowy_vibe, 波兰体育资讯频道，仅留排球)
 ];
