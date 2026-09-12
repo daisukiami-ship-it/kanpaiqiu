@@ -38,6 +38,8 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UC2w2DZg9FTMWpoa9YKW7sXg", // OSSRB Odbojkaški savez Srbije (@OSSRBOdbojkaškisavezSrbije, 塞尔维亚排球联合会)
   "UC6ZS0TLfErMqfPsBr65bldQ", // Reinas del Caribe (@ReinasdelCaribe, 多米尼加国家女子排球队官方频道)
   "UC8k85cdzfYHUsWjplQOqa_w", // Confederación Sudamericana de Voleibol (@voleysur, 南美排球联合会 CSV)
+  "UCQJGUiIXcivKgT8SNgftoZQ", // SAGA久光スプリングス (@springs_officia1, 日本V.League女排职业队官方频道)
+  "UCbn-wUbxcw51VchCcXF0BqA", // Prosecco DOC A. Carraro Imoco Volley (@proseccodocimococonegliano, 意大利A1女排 Conegliano 俱乐部)
   "UCutSfYmIwdDOb4Ba7ObcaAQ", // HOY媒體網絡 (@hkhoy, 香港综合电视网 76/77/78台，仅留排球)
   "UCObdCja7XEDvr0mpkxXF8_Q", // Sportowy Vibe (@sportowy_vibe, 波兰体育资讯频道，仅留排球)
 ];
