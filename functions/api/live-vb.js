@@ -20,7 +20,6 @@ const MIXED_SPORT_CHANNELS = {
   "UCdkrHEDb1xT3gts9lct12Ug": "KBS N SPORTS", // @KBSNSPORTS_official 韩国综合体育台，仅留排球(含韩文 배구)
   "UCutSfYmIwdDOb4Ba7ObcaAQ": "HOY媒體網絡", // @hkhoy 香港综合电视网，仅留排球(含中文 排球)
   "UCObdCja7XEDvr0mpkxXF8_Q": "Sportowy Vibe", // @sportowy_vibe 波兰体育资讯频道，仅留排球(含波兰文 siatkówk)
-  "UCw1geJXqB3E0DcoHVhpTaFg": "Zeren Group", // @ZerenGroup 土耳其集团(赞助 Zeren Group Spor 男排)，仅留排球(含土耳其文 voleybol)
 };
 
 const CHANNEL_WHITELIST_DEFAULT = [
@@ -43,7 +42,7 @@ const CHANNEL_WHITELIST_DEFAULT = [
   "UCbn-wUbxcw51VchCcXF0BqA", // Prosecco DOC A. Carraro Imoco Volley (@proseccodocimococonegliano, 意大利A1女排 Conegliano 俱乐部)
   "UCutSfYmIwdDOb4Ba7ObcaAQ", // HOY媒體網絡 (@hkhoy, 香港综合电视网 76/77/78台，仅留排球)
   "UCObdCja7XEDvr0mpkxXF8_Q", // Sportowy Vibe (@sportowy_vibe, 波兰体育资讯频道，仅留排球)
-  "UCw1geJXqB3E0DcoHVhpTaFg", // Zeren Group (@ZerenGroup, 土耳其集团/赞助 Zeren Group Spor 男排，仅留排球)
+  "UCw1geJXqB3E0DcoHVhpTaFg", // Zeren Group (@ZerenGroup, 土耳其集团/赞助 Zeren Group Spor 男排) —— 临时添加，全量收录不过滤
 ];
 
 function jsonResponse(obj, status = 200, extraHeaders = {}) {
@@ -156,8 +155,8 @@ export async function onRequest(context) {
       if (MIXED_SPORT_CHANNELS[sn.channelId]) {
         const title = (sn.title || "");
         const t = title.toLowerCase();
-        // 英文 volley / 韩文 배구 / 中文 排球 / 波兰文 siatkówk(a) / 土耳其文 voleybol
-        if (!t.includes("volley") && !title.includes("배구") && !title.includes("排球") && !t.includes("siatków") && !t.includes("voleybol")) continue;
+        // 英文 volley / 韩文 배구 / 中文 排球 / 波兰文 siatkówk(a)
+        if (!t.includes("volley") && !title.includes("배구") && !title.includes("排球") && !t.includes("siatków")) continue;
       }
       // upcoming 但无 scheduledStartTime：多为“直播已结束却未翻回 none”的卡住条目，丢弃
       if (lbc === "upcoming" && !lsd.scheduledStartTime) continue;
